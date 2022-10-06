@@ -76,8 +76,20 @@ class NN(object):
     # self.weights is a dictionary with keys W1, b1, W2, b2, ..., Wm, Bm where m - 1 is the number of hidden layers
     # The keys W1, W2, ..., Wm correspond to weights while b1, b2, ..., bm correspond to biases
     for layer_n in range(1, self.n_hidden + 2):
-      # WRITE CODE HERE
+      # Set the biases to zero (one bias per neuron of current layer)
       self.weights[f"b{layer_n}"] = np.zeros((1, self.dims[layer_n]))
+
+      # Set the weights (one weight per neuron of current layer to each neuron of previous layer)
+      num_of_features = self.dims[0] # h_0
+      previous_layer_size = self.dims[layer_n - 1]
+      current_layer_size = self.dims[layer_n]
+
+      self.weights[f"W{layer_n}"] = np.random.uniform(
+          low=-1/np.sqrt(num_of_features),
+          high=1/np.sqrt(num_of_features),
+          size=(previous_layer_size, current_layer_size)
+      )
+
 
   def relu(self, x, grad=False):
     """
@@ -90,10 +102,15 @@ class NN(object):
     """
     if grad:
       # WRITE CODE HERE
-      pass
+      gradient = np.zeros(x.shape)
+      gradient[x > 0] = 1
+
+      return gradient
+
     # WRITE CODE HERE
-    pass
-    return 0
+    activated_x = np.maximum(0, x)
+
+    return activated_x
 
   def sigmoid(self, x, grad=False):
     """
@@ -106,10 +123,14 @@ class NN(object):
     """
     if grad:
       # WRITE CODE HERE
-      pass
+      gradient = np.exp(-x) / (1 + np.exp(-x))**2
+
+      return gradient
+
     # WRITE CODE HERE
-    pass
-    return 0
+    activated_x = 1 / (1 + np.exp(-x))
+
+    return activated_x
 
   def tanh(self, x, grad=False):
     """
@@ -122,10 +143,14 @@ class NN(object):
     """
     if grad:
       # WRITE CODE HERE
-      pass
+      gradient = 1 - np.tanh(x)**2
+
+      return gradient
+
     # WRITE CODE HERE
-    pass
-    return 0
+    activated_x = np.tanh(x)
+
+    return activated_x
 
   def activation(self, x, grad=False):
     """
@@ -138,16 +163,17 @@ class NN(object):
     """
     if self.activation_str == "relu":
       # WRITE CODE HERE
-      pass
+      activated_x = self.relu(x, grad)
     elif self.activation_str == "sigmoid":
       # WRITE CODE HERE
-      pass
+      activated_x = self.sigmoid(x, grad)
     elif self.activation_str == "tanh":
       # WRITE CODE HERE
-      pass
+      activated_x = self.tanh(x, grad)
     else:
       raise Exception("Invalid activation")
-    return 0
+
+    return activated_x
 
   def softmax(self, x):
     """
@@ -158,8 +184,14 @@ class NN(object):
     """
     # Remember that softmax(x-C) = softmax(x) when C is a constant.
     # WRITE CODE HERE
-    pass
-    return 0
+
+    # Substract the maximum value of each row to avoid overflow
+    x = x - np.max(x, axis=1, keepdims=True)
+
+    # Every row of x is a sample, so must sum over the columns (axis=1)
+    softmax_x = np.exp(x) / np.sum(np.exp(x), axis=1, keepdims=True)
+
+    return softmax_x
 
   def forward(self, x):
     """
@@ -173,7 +205,24 @@ class NN(object):
     # Z0 just contains the inputs x to the network
     # Ai corresponds to the preactivation at layer i, Zi corresponds to the activation at layer i
     # WRITE CODE HERE
-    pass
+
+    for layer_n in range(1, self.n_hidden + 2):
+      # Calculate the preactivation
+      cache[f"A{layer_n}"] = np.dot(
+        cache[f"Z{layer_n - 1}"], self.weights[f"W{layer_n}"]
+      )
+      # Add the bias to the preactivation vector
+      cache[f"A{layer_n}"] += self.weights[f"b{layer_n}"]
+
+      # Calculate the activation
+      if layer_n == self.n_hidden + 1:
+        # Last layer, use softmax
+        cache[f"Z{layer_n}"] = self.softmax(cache[f"A{layer_n}"])
+
+      else:
+        # Hidden layer, use the activation function
+        cache[f"Z{layer_n}"] = self.activation(cache[f"A{layer_n}"])
+
     return cache
 
   def loss(self, prediction, labels):
@@ -188,8 +237,12 @@ class NN(object):
     prediction[np.where(prediction < self.epsilon)] = self.epsilon
     prediction[np.where(prediction > 1 - self.epsilon)] = 1 - self.epsilon
     # WRITE CODE HERE
-    pass
-    return 0
+
+    batch_size = labels.shape[0]
+    # Calculate the crossentropy loss
+    loss = -np.sum(labels * np.log(prediction)) / batch_size
+
+    return loss
 
   def backward(self, cache, labels):
     """
@@ -206,7 +259,50 @@ class NN(object):
     # grads is a dictionary with keys dAm, dWm, dbm, dZ(m-1), dA(m-1), ..., dW1, db1
     # Remember to account for the number of input examples!
     # WRITE CODE HERE
-    pass
+
+    batch_size = labels.shape[0]
+
+    # Calculate the gradient of the loss with respect to the last preactivation (softmax output layer)
+    grads[f"dA{self.n_hidden + 1}"] = output - labels
+
+    # Calculate the gradient of the loss with respect to the last weight matrix
+    grads[f"dW{self.n_hidden + 1}"] = np.dot(
+      cache[f"Z{self.n_hidden}"].T, grads[f"dA{self.n_hidden + 1}"]
+    ) / batch_size
+
+    # Calculate the gradient of the loss with respect to the last bias vector
+    grads[f"db{self.n_hidden + 1}"] = np.sum(
+      grads[f"dA{self.n_hidden + 1}"], axis=0, keepdims=True
+    ) / batch_size
+
+    # Calculate the gradient of the loss with respect to the last activation
+    grads[f"dZ{self.n_hidden}"] = np.dot(
+      grads[f"dA{self.n_hidden + 1}"], self.weights[f"W{self.n_hidden + 1}"].T
+    )
+
+    # Calculate the gradient of the loss with respect to the rest of the network
+    for layer_n in range(self.n_hidden, 0, -1):
+      # Calculate the gradient of the loss with respect to the preactivation
+      grads[f"dA{layer_n}"] = grads[f"dZ{layer_n}"] * self.activation(
+        cache[f"A{layer_n}"], grad=True
+      )
+
+      # Calculate the gradient of the loss with respect to the weight matrix
+      grads[f"dW{layer_n}"] = np.dot(
+        cache[f"Z{layer_n - 1}"].T, grads[f"dA{layer_n}"]
+      ) / batch_size
+
+      # Calculate the gradient of the loss with respect to the bias vector
+      grads[f"db{layer_n}"] = np.sum(
+        grads[f"dA{layer_n}"], axis=0, keepdims=True
+      ) / batch_size
+
+      # Calculate the gradient of the loss with respect to the previous activation
+      if layer_n > 1:
+        grads[f"dZ{layer_n - 1}"] = np.dot(
+          grads[f"dA{layer_n}"], self.weights[f"W{layer_n}"].T
+        )
+
     return grads
 
   def update(self, grads):
@@ -218,8 +314,26 @@ class NN(object):
     """
     for layer in range(1, self.n_hidden + 2):
       # WRITE CODE HERE
-      pass
 
+      # Update the weight matrix
+      self.weights[f"W{layer}"] -= self.lr * grads[f"dW{layer}"]
+      # Update the bias vector
+      self.weights[f"b{layer}"] -= self.lr * grads[f"db{layer}"]
+
+
+#%%
+nn = NN()
+nn.initialize_weights()
+
+x = np.random.uniform(low=-1/np.sqrt(784),
+          high=1/np.sqrt(784),
+          size=(2, 784))
+
+cache = nn.forward(x)
+predictions = cache[f"Z{nn.n_hidden + 1}"]
+labels = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 0, 1, 0, 0]])
+
+grads = nn.backward(cache, labels)
 
 #%%
 """## Question 2: Implementing CNN layers with NumPy (20 points)
@@ -651,3 +765,6 @@ if __name__ == "main":
     vis_image = data[12].unsqueeze(0)
   # import matplotlib.pyplot as plt
   # plt.imshow(vis_image.squeeze().permute(1, 2, 0).cpu().detach().numpy())
+
+
+
