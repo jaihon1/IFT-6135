@@ -15,16 +15,19 @@ Only edit the functions specified in the PDF (and wherever marked – `# WRITE C
 
 **Make sure you request a GPU runtime (especially for Question 3)!**
 """
-
+#%%
 # DO NOT MODIFY!
 import matplotlib.pyplot as plt
 import numpy as np
 import random
 
+
+#%%
 # Fix random seed
 random.seed(0)
 np.random.seed(0)
 
+#%%
 """## Question 1: Implementing MLPs with NumPy (30 points)"""
 
 class NN(object):
@@ -217,6 +220,8 @@ class NN(object):
       # WRITE CODE HERE
       pass
 
+
+#%%
 """## Question 2: Implementing CNN layers with NumPy (20 points)
 Note: You may assume that there are no biases, no input padding (valid convolution) and also that convolution here refers to cross-correlation, i.e., no kernel flipping when convolving the inputs.
 """
@@ -347,6 +352,7 @@ class MaxPooling2dLayer(object):
     pass
     return grads
 
+#%%
 """## Question 3: Implementing a CNN and comparison with MLPs using PyTorch (50 points)"""
 
 # DO NOT MODIFY!
@@ -489,7 +495,7 @@ class ResNet18(nn.Module):
     self.layer4 = None  # WRITE CODE HERE (use _create_layer)
     self.avgpool = None # WRITE CODE HERE
     self.linear = None  # WRITE CODE HERE
-  
+
   def activation(self, input):
     """
       input: Tensor
