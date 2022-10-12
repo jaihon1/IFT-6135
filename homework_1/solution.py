@@ -367,17 +367,19 @@ class Convolution2dLayer(object):
     self.n_units = n_units
     self.seed = seed
 
-  def initialize_weights(self):     
+  def initialize_weights(self):
     """
       Results: Initializes the weights of the CNN from uniform(0, 1).
-    """   
+    """
     if self.seed is not None:
       np.random.seed(self.seed)
 
     # self.weights is an np.array of shape (n_units, filter_size, filter_size)
     # We do not consider biases in this convolution layer implementation
     # WRITE CODE HERE
-    self.weights = None
+    self.weights = np.random.uniform(
+      low=0, high=1, size=(self.n_units, self.filter_size, self.filter_size)
+    )
 
   def forward(self, x):
     """
@@ -396,7 +398,32 @@ class Convolution2dLayer(object):
     # WRITE CODE HERE
     cache["x"] = x
     cache["out"] = None
-    pass
+
+    output_dimensions = (
+      (x.shape[2] - self.filter_size) // self.stride + 1,
+      (x.shape[3] - self.filter_size) // self.stride + 1
+    )
+
+    # Initialize the output array
+    # (batch size, output channels, output height, output width)
+    cache["out"] = np.zeros(
+      (x.shape[0], self.n_units, output_dimensions[0], output_dimensions[1])
+    )
+
+    # Perform convolution
+    for image_n in range(x.shape[0]): # For each image in the batch
+      for filter_n in range(self.n_units): # For each filter
+        for row in range(output_dimensions[0]): # For each row in the output filter
+          for col in range(output_dimensions[1]): # For each column in the output filter
+            cache["out"][image_n, filter_n, row, col] = np.sum(
+              x[
+                image_n,
+                :,
+                row * self.stride:row * self.stride + self.filter_size,
+                col * self.stride:col * self.stride + self.filter_size
+              ] * self.weights[filter_n]
+            )
+
     return cache
 
   def backward(self, cache, grad_output):
@@ -411,11 +438,41 @@ class Convolution2dLayer(object):
     # grads is an np.array containing the gradient of the loss with respect to the parameters in the convolution layer
     # Remember to account for the number of input examples!
     # WRITE CODE HERE
-    grads = None
-    pass
+
+    # Initialize the gradient array with the same shape as the weights
+    grads = np.zeros(self.weights.shape)
+
+    batch_size = cache["x"].shape[0]
+
+    # Go through each example in the batch
+    for image_n in range(batch_size):
+      # Go through each filter
+      for filter_n in range(self.n_units):
+        # Go through each row in the output filter
+        for row in range(grad_output.shape[2]):
+          # Go through each column in the output filter
+          for col in range(grad_output.shape[3]):
+            # Remove first dimension of the input (1, 3, 3) -> (3, 3)
+            input_image = np.squeeze(cache["x"][
+              image_n, :, row * self.stride:row * self.stride + self.filter_size, col * self.stride:col * self.stride + self.filter_size
+            ], axis=0)
+
+            # Add gradient to the specific filter
+            grads[filter_n] += input_image * grad_output[image_n, filter_n, row, col]
+
     return grads
 
+#%%
+conv_layer = Convolution2dLayer()
+conv_layer.initialize_weights()
 
+x = np.random.uniform(low=0, high=1, size=(5, 1, 32, 32))
+cache = conv_layer.forward(x)
+
+grad_output = np.random.uniform(low=0, high=1, size=cache["out"].shape)
+grads = conv_layer.backward(cache, grad_output)
+
+#%%
 class MaxPooling2dLayer(object):
   """
     Implements a 2D max-pooling layer.
@@ -429,7 +486,7 @@ class MaxPooling2dLayer(object):
         Filter size to use for max-pooling. We assume equal height and width, and stride = height = width.
     """
     super(MaxPooling2dLayer, self).__init__()
-  
+
     self.filter_size = filter_size
     self.stride = filter_size
 
@@ -447,6 +504,33 @@ class MaxPooling2dLayer(object):
     # WRITE CODE HERE
     cache["x"] = x
     cache["out"] = None
+
+    # Calculate the output dimensions
+    output_dimensions = (
+      (x.shape[2] - self.filter_size) // self.stride + 1,
+      (x.shape[3] - self.filter_size) // self.stride + 1
+    )
+
+    # Initialize the output array
+    # (batch size, output channels, output height, output width)
+    cache["out"] = np.zeros(
+      (x.shape[0], x.shape[1], output_dimensions[0], output_dimensions[1])
+    )
+
+    # Perform max-pooling
+    for image_n in range(x.shape[0]): # For each image in the batch
+      for channel_n in range(x.shape[1]): # For each channel
+        for row in range(output_dimensions[0]): # For each row in the output filter
+          for col in range(output_dimensions[1]): # For each column in the output filter
+            cache["out"][image_n, channel_n, row, col] = np.max(
+              x[
+                image_n,
+                channel_n,
+                row * self.stride:row * self.stride + self.filter_size,
+                col * self.stride:col * self.stride + self.filter_size
+              ]
+            )
+
     return cache
 
   def backward(self, cache, grad_output):
@@ -460,11 +544,56 @@ class MaxPooling2dLayer(object):
     """
     grads = None # WRITE CODE HERE (initialize grads correctly)
 
+    # Initialize the gradient array with the same shape as the input
+    grads = np.zeros(cache["x"].shape)
+
     # grads is an np.array containing the gradient of the loss with respect to the inputs to the max-pooling layer
     # Remember to account for the number of input examples!
     # WRITE CODE HERE
-    pass
+
+    batch_size = cache["x"].shape[0]
+
+    # Go through each example in the batch
+    for image_n in range(batch_size):
+      # Go through each channel
+      for channel_n in range(cache["x"].shape[1]):
+        # Go through each row in the output filter
+        for row in range(grad_output.shape[2]):
+          # Go through each column in the output filter
+          for col in range(grad_output.shape[3]):
+            input_image = cache["x"][
+              image_n,
+              channel_n,
+              row * self.stride:row * self.stride + self.filter_size,
+              col * self.stride:col * self.stride + self.filter_size
+            ]
+
+            # Find the maximum value in the input image
+            max_value = np.max(input_image)
+
+            # Find the indices of the maximum value
+            max_indices = np.argwhere(input_image == max_value)
+            max_indice_i = max_indices[0][0]
+            max_indice_j = max_indices[0][1]
+
+            # Add gradient to the specific filter, rest is all zeros
+            grads[
+              image_n,
+              channel_n,
+              row * self.stride + max_indice_i,
+              col * self.stride + max_indice_j
+            ] += grad_output[image_n, channel_n, row, col]
+
     return grads
+#%%
+
+max_pool_layer = MaxPooling2dLayer()
+x = np.random.uniform(low=0, high=1, size=(5, 1, 32, 32))
+cache = max_pool_layer.forward(x)
+
+grad_output = np.random.uniform(low=0, high=1, size=cache["out"].shape)
+grads = max_pool_layer.backward(cache, grad_output)
+
 
 #%%
 """## Question 3: Implementing a CNN and comparison with MLPs using PyTorch (50 points)"""
@@ -479,6 +608,8 @@ import torchvision
 import torchvision.transforms as transforms
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+#%%
+
 # Fix random seed
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
@@ -486,6 +617,7 @@ torch.cuda.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+#%%
 class ResidualBlock(nn.Module):
   """This class implements the Residual Block used in ResNet-18."""
 
@@ -513,23 +645,45 @@ class ResidualBlock(nn.Module):
     self.initialization = initialization
 
     # Define these members by replacing `None` with the correct definitions
-    self.conv1 = None # WRITE CODE HERE
-    self.bn1 = None   # WRITE CODE HERE
-    self.conv2 = None # WRITE CODE HERE
-    self.bn2 = None   # WRITE CODE HERE
+    # self.conv1 = None # WRITE CODE HERE
+    # self.bn1 = None   # WRITE CODE HERE
+    # self.conv2 = None # WRITE CODE HERE
+    # self.bn2 = None   # WRITE CODE HERE
+
+    self.conv1 = nn.Conv2d(
+      in_channels=self.in_channels,
+      out_channels=self.channels,
+      kernel_size=3,
+      stride=self.conv_stride,
+      padding=1,
+      bias=False
+    )
+
+    self.bn1 = nn.BatchNorm2d(self.channels)
+
+    self.conv2 = nn.Conv2d(
+      in_channels=self.channels,
+      out_channels=self.channels,
+      kernel_size=3,
+      stride=1,
+      padding=1,
+      bias=False
+    )
+
+    self.bn2 = nn.BatchNorm2d(self.channels)
 
     self.residual_connection = self.residual(in_channels, channels, conv_stride)
 
-    # Initialize weights for conv1 and conv2
+    # Initialize weights for convolution layers
     if initialization == "xavier_normal":
-      # WRITE CODE HERE
-      pass
+      init.xavier_normal_(self.conv1.weight)
+      init.xavier_normal_(self.conv2.weight)
     elif initialization == "xavier_uniform":
-      # WRITE CODE HERE
-      pass
+      init.xavier_uniform_(self.conv1.weight)
+      init.xavier_uniform_(self.conv2.weight)
     elif initialization == "kaiming_normal":
-      # WRITE CODE HERE
-      pass
+      init.kaiming_normal_(self.conv1.weight)
+      init.kaiming_normal_(self.conv2.weight)
     else:
       raise Exception("Invalid initialization")
 
@@ -543,13 +697,13 @@ class ResidualBlock(nn.Module):
     """
     if self.activation_str == "relu":
       # WRITE CODE HERE
-      pass
+      return F.relu(input)
     elif self.activation_str == "tanh":
       # WRITE CODE HERE
-      pass
+      return torch.tanh(input)
     else:
       raise Exception("Invalid activation")
-    return 0
+
 
   def residual(self, in_channels, channels, conv_stride=1):
     """
@@ -568,7 +722,19 @@ class ResidualBlock(nn.Module):
     layers = []
     if conv_stride != 1 or in_channels != channels:
       # WRITE CODE HERE
-      pass
+
+      # Adding a 1x1 convolution layer
+      layers.append(nn.Conv2d(
+        in_channels,
+        channels,
+        kernel_size=1,
+        stride=conv_stride,
+        bias=False
+      ))
+
+      # Adding BatchNorm2d layer
+      layers.append(nn.BatchNorm2d(channels))
+
     return nn.Sequential(*layers)
 
   def forward(self, x):
@@ -579,9 +745,40 @@ class ResidualBlock(nn.Module):
       Outputs: Returns the output of the forward pass of the block.
     """
     # WRITE CODE HERE
-    pass
-    return 0
 
+    # First convolution layer
+    out = self.conv1(x)
+
+    # BatchNorm2d layer
+    out = self.bn1(out)
+
+    # Activation layer
+    out = self.activation(out)
+
+    # Second convolution layer
+    out = self.conv2(out)
+
+    # BatchNorm2d layer
+    out = self.bn2(out)
+
+    # Adding the residual connection
+    out += self.residual_connection(x)
+
+    # Activation layer
+    out = self.activation(out)
+
+    return out
+
+#%%
+
+residual_block = ResidualBlock(3, 64, conv_stride=2, activation_str="relu", initialization="xavier_normal")
+
+x = torch.randn(1, 3, 32, 32)
+
+y = residual_block(x)
+
+
+#%%
 class ResNet18(nn.Module):
   """This class implements the ResNet-18 architecture from its components."""
 
@@ -601,14 +798,48 @@ class ResNet18(nn.Module):
     self.initialization = initialization
 
     # Define these members by replacing `None` with the correct definitions
-    self.conv1 = None   # WRITE CODE HERE
-    self.bn1 = None     # WRITE CODE HERE
-    self.layer1 = None  # WRITE CODE HERE (use _create_layer)
-    self.layer2 = None  # WRITE CODE HERE (use _create_layer)
-    self.layer3 = None  # WRITE CODE HERE (use _create_layer)
-    self.layer4 = None  # WRITE CODE HERE (use _create_layer)
-    self.avgpool = None # WRITE CODE HERE
-    self.linear = None  # WRITE CODE HERE
+    # self.conv1 = None   # WRITE CODE HERE
+    # self.bn1 = None     # WRITE CODE HERE
+    # self.layer1 = None  # WRITE CODE HERE (use _create_layer)
+    # self.layer2 = None  # WRITE CODE HERE (use _create_layer)
+    # self.layer3 = None  # WRITE CODE HERE (use _create_layer)
+    # self.layer4 = None  # WRITE CODE HERE (use _create_layer)
+    # self.avgpool = None # WRITE CODE HERE
+    # self.linear = None  # WRITE CODE HERE
+
+    self.conv1 = nn.Conv2d(
+      in_channels=3,
+      out_channels=64,
+      kernel_size=3,
+      stride=1,
+      padding=1,
+      bias=False
+    )
+
+    self.bn1 = nn.BatchNorm2d(64)
+
+    self.layer1 = self._create_layer(64, 64, 1)
+
+    self.layer2 = self._create_layer(64, 128, 2)
+
+    self.layer3 = self._create_layer(128, 256, 2)
+
+    self.layer4 = self._create_layer(256, 512, 2)
+
+    self.avgpool = nn.AvgPool2d((4, 4))
+
+    self.linear = nn.Linear(512, self.n_classes)
+
+    # # Initialize weights for convolution layers
+    # if initialization == "xavier_normal":
+    #   init.xavier_normal_(self.conv1.weight)
+    # elif initialization == "xavier_uniform":
+    #   init.xavier_uniform_(self.conv1.weight)
+    # elif initialization == "kaiming_normal":
+    #   init.kaiming_normal_(self.conv1.weight)
+    # else:
+    #   raise Exception("Invalid initialization")
+
 
   def activation(self, input):
     """
@@ -620,13 +851,12 @@ class ResNet18(nn.Module):
     """
     if self.activation_str == "relu":
       # WRITE CODE HERE
-      pass
+      return F.relu(input)
     elif self.activation_str == "tanh":
       # WRITE CODE HERE
-      pass
+      return torch.tanh(input)
     else:
       raise Exception("Invalid activation")
-    return 0
 
   def _create_layer(self, in_channels, channels, conv_stride=1):
     """
@@ -641,7 +871,24 @@ class ResNet18(nn.Module):
     """
     # Modify the following statement to return an nn.Sequential object containing 2 ResidualBlocks.
     # You must make sure that the appropriate channels and conv_stride are provided.
-    return nn.Sequential() # WRITE CODE HERE
+
+    # WRITE CODE HERE
+    return nn.Sequential(
+      ResidualBlock(
+        in_channels,
+        channels,
+        conv_stride=conv_stride,
+        activation_str=self.activation_str,
+        initialization=self.initialization
+      ),
+      ResidualBlock(
+        channels,
+        channels,
+        conv_stride=1,
+        activation_str=self.activation_str,
+        initialization=self.initialization
+      )
+    )
 
   def get_first_conv_layer_filters(self):
     """
@@ -663,10 +910,51 @@ class ResNet18(nn.Module):
       Outputs: Returns the output of the forward pass of the network.
     """
     # WRITE CODE HERE
-    pass
-    return 0
 
-def get_cifar10():  
+    # First convolution layer
+    out = self.conv1(x)
+
+    # BatchNorm2d layer
+    out = self.bn1(out)
+
+    # Activation layer
+    out = self.activation(out)
+
+    # First layer
+    out = self.layer1(out)
+
+    # Second layer
+    out = self.layer2(out)
+
+    # Third layer
+    out = self.layer3(out)
+
+    # Fourth layer
+    out = self.layer4(out)
+
+    # Average pooling layer
+    out = self.avgpool(out)
+
+    # Flatten the output
+    out = out.view(out.size(0), -1)
+
+    # Linear layer
+    out = self.linear(out)
+
+    return out
+
+#%%
+resnet18 = ResNet18(activation_str="relu", initialization="xavier_normal")
+
+x = torch.randn(1, 3, 32, 32)
+
+y = resnet18(x)
+
+
+
+#%%
+
+def get_cifar10():
   transform = transforms.Compose([
       transforms.ToTensor()
   ])
@@ -680,8 +968,10 @@ def get_cifar10():
       root='./data', train=False, download=True, transform=transform)
   val_loader = torch.utils.data.DataLoader(
       val_dataset, batch_size=128, shuffle=False, num_workers=2)
-  
+
   return train_loader, val_loader
+
+#%%
 
 def train_loop(epoch, model, train_loader, criterion, optimizer):
   """
@@ -703,6 +993,37 @@ def train_loop(epoch, model, train_loader, criterion, optimizer):
 
   # WRITE CODE HERE
 
+  # Set the model to training mode
+  model.train()
+
+  # Loop over the training data
+  for i, (images, labels) in enumerate(train_loader):
+    # Move the images and labels to the device
+    images = images.to(device)
+    labels = labels.to(device)
+
+    # Forward pass
+    outputs = model(images)
+
+    # Calculate the loss
+    loss = criterion(outputs, labels)
+
+    # Backward pass
+    loss.backward()
+
+    # Update the weights
+    optimizer.step()
+
+    # Reset the gradients
+    optimizer.zero_grad()
+
+    # Calculate the accuracy
+    _, predicted = torch.max(outputs.data, 1)
+    train_acc += (predicted == labels).sum().item()
+
+    # Calculate the loss
+    train_loss += loss.item()
+
   print(f"Epoch: {epoch} | Train Acc: {train_acc:.6f} | Train Loss: {train_loss:.6f}")
   return train_acc, train_loss
 
@@ -723,6 +1044,28 @@ def valid_loop(epoch, model, val_loader, criterion):
   val_loss = 0.
 
   # WRITE CODE HERE
+
+  # Set the model to evaluation mode
+  model.eval()
+
+  # Loop over the validation data
+  for i, (images, labels) in enumerate(val_loader):
+    # Move the images and labels to the device
+    images = images.to(device)
+    labels = labels.to(device)
+
+    # Forward pass
+    outputs = model(images)
+
+    # Calculate the loss
+    loss = criterion(outputs, labels)
+
+    # Calculate the accuracy
+    _, predicted = torch.max(outputs.data, 1)
+    val_acc += (predicted == labels).sum().item()
+
+    # Calculate the loss
+    val_loss += loss.item()
 
   print(f"Epoch: {epoch} | Val Acc: {val_acc:.6f}   | Val Loss: {val_loss:.6f}")
   return val_acc, val_loss
@@ -768,3 +1111,5 @@ if __name__ == "main":
 
 
 
+
+# %%
