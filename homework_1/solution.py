@@ -17,6 +17,7 @@ Only edit the functions specified in the PDF (and wherever marked – `# WRITE C
 """
 #%%
 # DO NOT MODIFY!
+from symbol import parameters
 import matplotlib.pyplot as plt
 import numpy as np
 import random
@@ -943,6 +944,105 @@ class ResNet18(nn.Module):
 
     return out
 
+
+#%%
+
+class Mlp(nn.Module):
+  """This class implements a simple MLP."""
+
+  def __init__(self, n_inputs, n_classes, n_hidden=100, activation_str="relu", initialization="xavier_normal"):
+    """
+      Constructor for the Mlp class.
+
+      n_inputs: int
+        Number of input features.
+      n_classes: int
+        Number of classes.
+      n_hidden: int, default 100
+        Number of hidden units in the MLP.
+      activation_str: string, default "relu"
+        Activation function to use.
+      initialization: string, default "xavier_normal"
+        Weight initialization to use.
+    """
+    super(Mlp, self).__init__()
+
+    self.n_inputs = n_inputs
+    self.n_classes = n_classes
+    self.n_hidden = n_hidden
+    self.activation_str = activation_str
+    self.initialization = initialization
+
+    # Define these members by replacing `None` with the correct definitions
+    self.fc1 = nn.Linear(self.n_inputs, self.n_hidden)
+    self.fc2 = nn.Linear(self.n_hidden, self.n_hidden)
+    self.fc3 = nn.Linear(self.n_hidden, self.n_classes)
+
+    # Initialize weights for linear layers
+    if initialization == "xavier_normal":
+      init.xavier_normal_(self.fc1.weight)
+      init.xavier_normal_(self.fc2.weight)
+      init.xavier_normal_(self.fc3.weight)
+    elif initialization == "xavier_uniform":
+      init.xavier_uniform_(self.fc1.weight)
+      init.xavier_uniform_(self.fc2.weight)
+      init.xavier_uniform_(self.fc3.weight)
+    elif initialization == "kaiming_normal":
+      init.kaiming_normal_(self.fc1.weight)
+      init.kaiming_normal_(self.fc2.weight)
+      init.kaiming_normal_(self.fc3.weight)
+    else:
+      raise Exception("Invalid initialization")
+
+  def activation(self, input):
+    """
+      input: Tensor
+        Input on which the activation is applied.
+
+      Output: Result of activation function applied on input.
+        E.g. if self.activation_str is "relu", return relu(input).
+    """
+    if self.activation_str == "relu":
+      # WRITE CODE HERE
+      return F.relu(input)
+    elif self.activation_str == "tanh":
+      # WRITE CODE HERE
+      return torch.tanh(input)
+    else:
+      raise Exception("Invalid activation")
+
+  def forward(self, x):
+    """
+      x: Tensor
+        Input to the network.
+
+      Outputs: Returns the output of the forward pass of the network.
+    """
+    # WRITE CODE HERE
+
+    # First linear layer
+    out = self.fc1(x)
+
+    # Activation layer
+    out = self.activation(out)
+
+    # Second linear layer
+    out = self.fc2(out)
+
+    # Activation layer
+    out = self.activation(out)
+
+    # Third linear layer
+    out = self.fc3(out)
+
+    return out
+
+#%%
+mlp_model = Mlp(784, 10, n_hidden=100, activation_str="relu", initialization="xavier_normal")
+
+x = torch.randn(1, 784)
+y = mlp_model(x)
+
 #%%
 resnet18 = ResNet18(activation_str="relu", initialization="xavier_normal")
 
@@ -968,6 +1068,8 @@ def get_cifar10():
       root='./data', train=False, download=True, transform=transform)
   val_loader = torch.utils.data.DataLoader(
       val_dataset, batch_size=128, shuffle=False, num_workers=2)
+
+  print(train_loader.dataset.data.shape)
 
   return train_loader, val_loader
 
@@ -1027,6 +1129,7 @@ def train_loop(epoch, model, train_loader, criterion, optimizer):
   print(f"Epoch: {epoch} | Train Acc: {train_acc:.6f} | Train Loss: {train_loss:.6f}")
   return train_acc, train_loss
 
+#%%
 def valid_loop(epoch, model, val_loader, criterion):
   """
     epoch: int
@@ -1067,24 +1170,54 @@ def valid_loop(epoch, model, val_loader, criterion):
     # Calculate the loss
     val_loss += loss.item()
 
+
   print(f"Epoch: {epoch} | Val Acc: {val_acc:.6f}   | Val Loss: {val_loss:.6f}")
   return val_acc, val_loss
 
+
+#%%
+train_accs, train_losses, val_accs, val_losses = [], [], [], []
+n_epochs = 1
+
+model = Mlp(784, 10, n_hidden=100, activation_str="relu", initialization="xavier_normal")
+model = model.to(device)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+train_loader, val_loader = get_cifar10()
+
+for epoch in range(n_epochs):
+  train_acc, train_loss = train_loop(epoch, model, train_loader, criterion, optimizer)
+  train_accs.append(train_acc)
+  train_losses.append(train_loss)
+
+  val_acc, val_loss = valid_loop(epoch, model, val_loader, criterion)
+  val_accs.append(val_acc)
+  val_losses.append(val_loss)
+
+
+
+#%%
 activation_str = "relu"
 initialization = "xavier_normal"
 
 if __name__ == "__main__":
   train_accs, train_losses, val_accs, val_losses = [], [], [], []
-  n_epochs = 25
+  n_epochs = 1
 
   model = ResNet18(
     activation_str=activation_str,
     initialization=initialization
   ).to(device)
+
   criterion = nn.CrossEntropyLoss()
   optimizer = optim.Adam(model.parameters())
 
   train_loader, val_loader = get_cifar10()
+
+  print(len(val_loader.dataset))
+  print(len(train_loader.dataset))
 
   for epoch in range(n_epochs):
     # Training
@@ -1097,19 +1230,157 @@ if __name__ == "__main__":
     val_accs.append(val_acc)
     val_losses.append(val_loss)
 
+
+#%%
 """### Questions 3.4, 3.5, 3.6, 3.7, 3.8
 You may write your own code for these questions below. These will not be autograded and you need not submit code for these, only the report.
 """
+
+def visualize_last_conv_layer_filter(model, filter_index):
+  """
+    model: ResNet18
+      The model to train, which is an instance of the ResNet18 class.
+    filter_index: int
+      The index of the filter to visualize.
+
+    Outputs: Returns a numpy array of shape (3, 3, 3) that represents the filter
+    of the last convolutional layer at the given index.
+  """
+  # WRITE CODE HERE
+  # Get the last convolutional layer
+  last_conv_layer = model.layer4[1].conv2
+
+  # Get the weights of the last convolutional layer
+  weights = last_conv_layer.weight
+
+  # Get the filter at the given index
+  filter = weights[filter_index]
+
+  # Convert the filter to a numpy array
+  filter = filter.detach().numpy()
+
+  # plot the filter
+  plt.imshow(filter.transpose(1, 2, 0))
+  plt.show()
+
+def plot_feature_map(model, image, layer_index):
+  """
+    model: ResNet18
+      The model to train, which is an instance of the ResNet18 class.
+    image: numpy array
+      A numpy array of shape (3, 32, 32) that represents the image to visualize.
+    layer_index: int
+      The index of the layer to visualize.
+
+    Outputs: Returns a numpy array of shape (3, 32, 32) that represents the
+    feature map of the given layer at the given index.
+  """
+  # Get the layer at the given index
+  layer = model.layer4[layer_index]
+
+  # Convert the image to a tensor
+  image = torch.from_numpy(image)
+
+  # Move the image to the device
+  image = image.to(device)
+
+  # Add a batch dimension to the image
+  image = image.unsqueeze(0)
+
+  # Get the feature map of the given layer
+  feature_map = layer(image)
+
+  # Convert the feature map to a numpy array
+  feature_map = feature_map.detach().cpu().numpy()
+
+  # plot the feature map
+  plt.imshow(feature_map[0][0])
+  plt.show()
+
+def plot_results(train_accs, train_losses, val_accs, val_losses):
+  """
+    train_accs: list
+      List of training accuracies for each epoch.
+    train_losses: list
+      List of training losses for each epoch.
+    val_accs: list
+      List of validation accuracies for each epoch.
+    val_losses: list
+      List of validation losses for each epoch.
+
+    Outputs: None
+  """
+  # WRITE CODE HERE
+
+  # Plot the training and validation accuracies
+  plt.plot(train_accs, label="Training")
+  plt.plot(val_accs, label="Validation")
+  plt.xlabel("Epoch")
+  plt.ylabel("Accuracy")
+  plt.legend()
+  plt.show()
+
+  # Plot the training and validation losses
+  plt.plot(train_losses, label="Training")
+  plt.plot(val_losses, label="Validation")
+  plt.xlabel("Epoch")
+  plt.ylabel("Loss")
+  plt.legend()
+  plt.show()
 
 # For Q 3.6
 if __name__ == "main":
   vis_image = None
   for data, labels in val_loader:
     vis_image = data[12].unsqueeze(0)
-  # import matplotlib.pyplot as plt
-  # plt.imshow(vis_image.squeeze().permute(1, 2, 0).cpu().detach().numpy())
+
+  import matplotlib.pyplot as plt
+  plt.imshow(vis_image.squeeze().permute(1, 2, 0).cpu().detach().numpy())
 
 
+
+
+# %%
+def find_first_repeated_char(input_word):
+  seen_letters = {}
+
+  input_word_array = input_word
+
+  for letter in input_word:
+    if letter not in seen_letters:
+      seen_letters[letter] = 1
+    else:
+      return letter
+
+  return None
+
+# Refactor find_first_repeated_char with comments and docs
+def find_first_repeated_char(input_word: str) -> str:
+  """
+  Finds the first repeated character in a string.
+
+  Args:
+    input_word: string
+      The string to search for repeated characters.
+
+  Returns:
+    The first repeated character in the string, or None if no repeated
+    characters are found.
+  """
+  # Create a dictionary to store the letters we've seen
+  seen_letters = {}
+
+  # Loop through the letters in the string
+  for letter in input_word:
+    # If the letter is not in the dictionary, add it
+    if letter not in seen_letters:
+      seen_letters[letter] = 1
+    # If the letter is in the dictionary, return it
+    else:
+      return letter
+
+  # If we get to the end of the string, return None
+  return None
 
 
 # %%
