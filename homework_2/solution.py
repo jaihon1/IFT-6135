@@ -1,3 +1,4 @@
+#%%
 # -*- coding: utf-8 -*-
 """solution.ipynb
 
@@ -94,6 +95,80 @@ train_data = get_processed_data(train_paths)
 val_data = get_processed_data(val_paths)
 test_data = get_processed_data(test_paths)
 
+
+#%%
+
+# Read the data from json files
+with open("results/transformer-sgd-dropout_True-strategy_greedy.json", "r") as f:
+    data = json.load(f)
+
+train_losses = data["train_losses"]
+val_losses = data["valid_losses"]
+train_ppls = data["train_ppls"]
+val_ppls = data["valid_ppls"]
+train_times = data["train_times"]
+val_times = data["valid_times"]
+epochs = 10
+
+print('train loss', np.min(train_losses))
+print('train ppl', np.min(train_ppls))
+print('val loss', np.min(val_losses))
+print('val ppl', np.min(val_ppls))
+print('bleu1', data["test_bleu1"])
+print('bleu2', data["test_bleu2"])
+
+
+#%%
+train_times = np.cumsum(train_times)
+val_times = np.cumsum(val_times)
+
+# plot the train and vali losses and perplexities over epochs
+def plot_losses_and_ppls(train_losses, val_losses, train_ppls, val_ppls, epochs):
+    # WRITE CODE HERE
+    # plot the train and vali losses over epochs
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, epochs + 1), train_losses, label="train")
+    plt.plot(range(1, epochs + 1), val_losses, label="val")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+    # plot the train and vali perplexities over epochs
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, epochs + 1), train_ppls, label="train")
+    plt.plot(range(1, epochs + 1), val_ppls, label="val")
+    plt.xlabel("Epochs")
+    plt.ylabel("Perplexity")
+    plt.legend()
+    plt.show()
+
+plot_losses_and_ppls(train_losses, val_losses, train_ppls, val_ppls, epochs)
+
+# plot the train and vali losses and perplexities over time
+def plot_losses_and_ppls_over_time(train_losses, val_losses, train_ppls, val_ppls, train_times, val_times):
+    # WRITE CODE HERE
+    # plot the train and vali losses over time
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_times, train_losses, label="train")
+    plt.plot(val_times, val_losses, label="val")
+    plt.xlabel("Time")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
+
+    # plot the train and vali perplexities over time
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_times, train_ppls, label="train")
+    plt.plot(val_times, val_ppls, label="val")
+    plt.xlabel("Time")
+    plt.ylabel("Perplexity")
+    plt.legend()
+    plt.show()
+
+plot_losses_and_ppls_over_time(train_losses, val_losses, train_ppls, val_ppls, train_times, val_times)
+
+#%%
 """### GRU Encoder-Decoder Model for Machine Translation
 
 #### Dataloader
@@ -128,6 +203,7 @@ if __name__ == "__main__":
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=True, collate_fn=get_batch)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True, collate_fn=get_batch)
 
+#%%
 """#### Encoder-Decoder Model"""
 
 class Encoder(nn.Module):
@@ -152,15 +228,30 @@ class Encoder(nn.Module):
         self.use_dropout = use_dropout
 
         self.embedding   = None # WRITE CODE HERE (for padding_idx, use special_idx["pad"])
+        self.embedding = nn.Embedding(self.vocabulary_size, self.embedding_size, padding_idx=special_idx["pad"])
+
         if self.use_dropout:
             self.dropout = None # WRITE CODE HERE (use p_dropout)
+            self.dropout = nn.Dropout(p_dropout)
+
         self.gru         = None # WRITE CODE HERE (set batch_first=False)
+        self.gru = nn.GRU(self.embedding_size, self.hidden_size, self.num_layers, batch_first=False)
 
     def forward(self, x):
         # WRITE CODE HERE
         # x -> embedding -> dropout (if use_dropout) -> gru -> return output and final hidden
-        pass
 
+        x = self.embedding(x)
+
+        if self.use_dropout:
+            x = self.dropout(x)
+
+        output, hidden = self.gru(x)
+
+        return output, hidden
+
+
+#%%
 class Decoder(nn.Module):
     """
     Defines a decoder model containing a GRU.
@@ -183,11 +274,18 @@ class Decoder(nn.Module):
         self.use_dropout = use_dropout
 
         self.embedding   = None # WRITE CODE HERE
+        self.embedding = nn.Embedding(self.vocabulary_size, self.embedding_size)
+
         if self.use_dropout:
             self.dropout = None # WRITE CODE HERE (use p_dropout)
+            self.dropout = nn.Dropout(p_dropout)
+
         self.gru         = None # WRITE CODE HERE (set batch_first=False)
+        self.gru = nn.GRU(self.embedding_size, self.hidden_size, self.num_layers, batch_first=False)
+
         self.fc          = None # WRITE CODE HERE
-    
+        self.fc = nn.Linear(self.hidden_size, self.vocabulary_size)
+
     def forward(self, x, hidden):
         x = x.unsqueeze(0)
 
@@ -195,10 +293,33 @@ class Decoder(nn.Module):
         # x -> embedding -> dropout (if use_dropout) -> gru -> output and final hidden
         # output -> fc -> out
         # return out and final hidden
-        pass
 
-        return
+        x = self.embedding(x)
 
+        if self.use_dropout:
+            x = self.dropout(x)
+
+        output, final_hidden = self.gru(x, hidden)
+
+        output = self.fc(output)
+
+        output = output.squeeze(0)
+
+        return output, final_hidden
+
+#%%
+# encoder = Encoder()
+
+# x = torch.tensor([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+# output, hidden = encoder(x)
+
+# decoder = Decoder()
+
+# x = torch.tensor([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+# output, h_f = decoder(x, hidden)
+
+
+#%%
 class Seq2Seq(nn.Module):
     """
     Defines an encoder-decoder (sequence-to-sequence) model for machine translation.
@@ -225,7 +346,8 @@ class Seq2Seq(nn.Module):
 
         # WRITE CODE HERE
         # Get the encoder outputs and hidden state for the source sentences
-        encoder_out, hidden = None
+        # encoder_out, hidden = None
+        encoder_out, hidden = self.encoder(source)
 
         # The first input token passed to the decoder is <bos>
         out = target[0, :]
@@ -234,14 +356,16 @@ class Seq2Seq(nn.Module):
             for idx in range(1, max_length):
                 # WRITE CODE HERE
                 # Get the decoder outputs and hidden state for the input token and hidden state
-                out, hidden = None
+                # out, hidden = None
+                out, hidden = self.decoder(out, hidden)
 
                 outputs[idx] = out
 
                 # WRITE CODE HERE
                 # Reassign out with the greedy choice (argmax) for each batch
                 # (batch_size, vocabulary_size) -> (batch_size)
-                out = None
+
+                out = out.argmax(1)
 
                 sentences[idx] = out
         elif self.strategy == "random":
@@ -249,7 +373,8 @@ class Seq2Seq(nn.Module):
             for idx in range(1, max_length):
                 # WRITE CODE HERE
                 # Get the decoder outputs and hidden state for the input token and hidden state
-                out, hidden = None
+                # out, hidden = None
+                out, hidden = self.decoder(out, hidden)
 
                 outputs[idx] = out
 
@@ -258,7 +383,10 @@ class Seq2Seq(nn.Module):
                 # p(x_i | x_{1:i-1}) =  exp(o_i / temperature) / sum(exp(o / temperature))
                 # (batch_size, vocabulary_size) -> (batch_size)
                 temperature = 0.5
-                out = None
+
+                p = torch.softmax(out / temperature, dim=1)
+
+                out = torch.multinomial(p.squeeze(0), 1).squeeze(1)
 
                 sentences[idx] = out
         else:
@@ -266,12 +394,27 @@ class Seq2Seq(nn.Module):
 
         return outputs, sentences
 
+#%%
+# encoder = Encoder()
+# decoder = Decoder()
+# model = Seq2Seq(encoder, decoder, strategy="random")
+
+# source = torch.tensor([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+# target = torch.tensor([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+
+# outputs, sentences = model(source, target)
+
+
+#%%
+
 """#### Training"""
 
 def get_criterion():
     # WRITE CODE HERE
     # The criterion must compute the cross-entropy loss but ignore special_idx["pad"].
     criterion = None
+    criterion = nn.CrossEntropyLoss(ignore_index=special_idx["pad"])
+
     return criterion
 
 def train(model, dataloader, optimizer, criterion):
@@ -342,6 +485,7 @@ def compute_bleu_gru(model, dataloader):
     return torchtext.data.metrics.bleu_score(translations, targets, max_n=1, weights=[1]) * 100, \
            torchtext.data.metrics.bleu_score(translations, targets, max_n=2, weights=[0.5]*2) * 100,
 
+#%%
 fix_experiment_seed()
 use_dropout = False
 strategy = "greedy"
@@ -394,6 +538,7 @@ if __name__ == "__main__":
 
     json.dump(results, open(f"seq2seq-adam-dropout_{str(use_dropout)}-strategy_{strategy}.json", "w"), indent=4)
 
+#%%
 fix_experiment_seed()
 use_dropout = True
 strategy = "greedy"
@@ -446,6 +591,7 @@ if __name__ == "__main__":
 
     json.dump(results, open(f"seq2seq-sgd-dropout_{str(use_dropout)}-strategy_{strategy}.json", "w"), indent=4)
 
+#%%
 fix_experiment_seed()
 use_dropout = True
 strategy = "greedy"
@@ -498,6 +644,7 @@ if __name__ == "__main__":
 
     json.dump(results, open(f"seq2seq-adam-dropout_{str(use_dropout)}-strategy_{strategy}.json", "w"), indent=4)
 
+#%%
 fix_experiment_seed()
 use_dropout = True
 strategy = "random"
@@ -550,6 +697,7 @@ if __name__ == "__main__":
 
     json.dump(results, open(f"seq2seq-adam-dropout_{str(use_dropout)}-strategy_{strategy}.json", "w"), indent=4)
 
+#%%
 """#### Basic Tests"""
 
 class TestSeq2SeqShapes():
@@ -655,6 +803,8 @@ class TestSeq2SeqShapes():
 if __name__ == "__main__":
     TestSeq2SeqShapes().test_forward_shape()
 
+
+#%%
 """### Transformer Encoder-Decoder Model for Machine Translation
 
 #### Dataloader
@@ -689,6 +839,8 @@ if __name__ == "__main__":
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=True, collate_fn=get_batch)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True, collate_fn=get_batch)
 
+
+#%%
 """#### Embeddings
 
 The classes below are used to get the Transformer embeddings. The embeddings are made up of positional encodings and token embeddings. You do not need to modify the code, and you may run it by just clicking the run/play button.
@@ -736,6 +888,8 @@ class TransformerEmbedding(nn.Module):
             embeddings = self.dropout(embeddings)
         return embeddings
 
+
+#%%
 """#### LayerNorm"""
 
 class LayerNorm(nn.Module):
@@ -771,12 +925,25 @@ class LayerNorm(nn.Module):
             The output tensor, having the same shape as `inputs`.
         """
         # WRITE CODE HERE
-        return
+        expected = torch.mean(x, dim=-1, keepdim=True)
+        var = torch.mean((x - expected) ** 2, dim=-1, keepdim=True)
+
+        x = (x - expected) / torch.sqrt(var + self.eps)
+
+        x = x * self.weight + self.bias
+
+        return x
 
     def reset_parameters(self):
         nn.init.ones_(self.weight)
         nn.init.zeros_(self.bias)
 
+#%%
+# layer_norm = LayerNorm(5)
+# x = torch.randn(3, 4, 5)
+# y = layer_norm(x)
+
+#%%
 """#### Masked Multi-Head Attention
 
 We use masked multi-head attention because the decoder should not attend to future tokens in the target while performing autoregressive generation (machine translation).
@@ -790,10 +957,17 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
 
         # Use nn.Linear objects so as to apply both weights and biases
-        self.w_q = None # WRITE CODE HERE
-        self.w_k = None # WRITE CODE HERE
-        self.w_v = None # WRITE CODE HERE
-        self.w_y = None # WRITE CODE HERE
+        # self.w_q = None # WRITE CODE HERE
+        self.w_q = nn.Linear(head_size * num_heads, head_size * num_heads)
+
+        # self.w_k = None # WRITE CODE HERE
+        self.w_k = nn.Linear(head_size * num_heads, head_size * num_heads)
+
+        # self.w_v = None # WRITE CODE HERE
+        self.w_v = nn.Linear(head_size * num_heads, head_size * num_heads)
+
+        # self.w_y = None # WRITE CODE HERE
+        self.w_y = nn.Linear(num_heads * head_size, head_size * num_heads)
 
     def get_attention_weights(self, queries, keys, mask=None):
         """Compute the attention weights.
@@ -834,8 +1008,15 @@ class MultiHeadAttention(nn.Module):
         """
         if mask is not None:
             mask = mask.int()
+
         # WRITE CODE HERE
-        return
+        x = torch.matmul(queries, keys.transpose(-1, -2)) / np.sqrt(self.head_size)
+        if mask is not None:
+            x = x * mask - 10e4 * (1 - mask)
+
+        attention_weights = torch.softmax(x, dim=-1)
+
+        return attention_weights
 
     def apply_attention(self, queries, keys, values, mask=None):
         """Apply the attention.
@@ -876,10 +1057,14 @@ class MultiHeadAttention(nn.Module):
         -------
         outputs (`torch.FloatTensor` of shape `(batch_size, sequence_length, num_heads * head_size)`)
             Tensor containing the concatenated outputs of the attention for all
-            the sequences in the batch, and all positions in each sequence. 
+            the sequences in the batch, and all positions in each sequence.
         """
         # WRITE CODE HERE
-        return
+        attention_weights = self.get_attention_weights(queries, keys, mask)
+        attended_values = torch.matmul(attention_weights, values)
+        outputs = self.merge_heads(attended_values)
+
+        return outputs
 
     def split_heads(self, tensor):
         """Split the head vectors.
@@ -905,7 +1090,12 @@ class MultiHeadAttention(nn.Module):
             definition of the input `tensor` above.
         """
         # WRITE CODE HERE
-        return
+        batch_size, sequence_length, _ = tensor.shape
+        output = tensor.view(batch_size, sequence_length, self.num_heads, self.head_size)
+
+        output = output.permute(0, 2, 1, 3)
+
+        return output
 
     def merge_heads(self, tensor):
         """Merge the head vectors.
@@ -930,7 +1120,10 @@ class MultiHeadAttention(nn.Module):
             definition of the input `tensor` above.
         """
         # WRITE CODE HERE
-        return
+        batch_size, _, sequence_length, _ = tensor.shape
+        output = tensor.permute(0, 2, 1, 3).contiguous().view(batch_size, sequence_length, -1)
+
+        return output
 
     def forward(self, queries, keys, values, mask=None):
         """Multi-headed attention.
@@ -958,11 +1151,11 @@ class MultiHeadAttention(nn.Module):
 
         keys (`torch.FloatTensor` of shape `(batch_size, sequence_length, num_heads * head_size)`)
             Tensor containing the keys for all the positions in the sequences
-            and all the heads. 
+            and all the heads.
 
         values (`torch.FloatTensor` of shape `(batch_size, sequence_length, num_heads * head_size)`)
             Tensor containing the values for all the positions in the sequences
-            and all the heads. 
+            and all the heads.
 
         mask (`torch.FloatTensor` of shape `(batch_size, 1, sequence_length, sequence_length)`)
             Tensor containing the mask. Default: None.
@@ -974,8 +1167,42 @@ class MultiHeadAttention(nn.Module):
             sequences in the batch, and all positions in each sequence.
         """
         # WRITE CODE HERE
-        return
+        # print("queries shape: ", queries.shape)
+        # print("keys shape: ", keys.shape)
+        # print("values shape: ", values.shape)
 
+        # Use weights to get queries, keys, and values
+        queries = self.w_q(queries)
+        keys = self.w_k(keys)
+        values = self.w_v(values)
+
+        # Split the head vectors
+        queries = self.split_heads(queries)
+        keys = self.split_heads(keys)
+        values = self.split_heads(values)
+
+        # Apply the scaled dot-product attention
+        outputs = self.apply_attention(queries, keys, values, mask)
+
+        # Apply the linear projection
+        outputs = self.w_y(outputs)
+
+        return outputs
+
+
+#%%
+
+# model = MultiHeadAttention(4, 8)
+
+# queries = torch.randn(2, 3, 32)
+# keys = torch.randn(2, 3, 32)
+# values = torch.randn(2, 3, 32)
+
+# outputs = model(queries, keys, values)
+
+
+
+#%%
 """#### Position-wise FFN
 Defines a feedforward network, do not modify. You may just run it by clicking the run/play button.
 """
@@ -1124,7 +1351,13 @@ class TEncoder(nn.Module):
         # Then, get the output of each layer.
         # x -> embed -> layer[0] -> layer[1] -> ... -> layer[n-1] -> return output.
         # WRITE CODE HERE
-        return
+
+        x = self.embedding(x)
+
+        for layer in self.layers:
+            x = layer(x, mask)
+
+        return x
 
 class TDecoder(nn.Module):
     """
@@ -1164,7 +1397,15 @@ class TDecoder(nn.Module):
         # target -> embed -> layer[0] -> layer[1] -> ... -> layer[n-1] -> final layer output.
         # Pass final layer output to linear -> return final output.
         # WRITE CODE HERE
-        return
+
+        target = self.embedding(target)
+
+        for layer in self.layers:
+            target = layer(target, encoded_source, mask_target, mask_source)
+
+        output = self.linear(target)
+
+        return output
 
 """#### Transformer
 
@@ -1304,14 +1545,18 @@ def compute_bleu(model, dataloader):
                 # Assign the greedy choice tokens for output[i] to o
                 # output[i] has shape (sequence_length, vocabulary_size)
                 # o should have shape (sequence_length)
-                o = None
+
+                o = output[i].argmax(dim=1)
+
             elif model.strategy == "random":
                 # WRITE CODE HERE
                 # Assign the randomly sampled tokens for output[i] to o
                 # output[i] has shape (sequence_length, vocabulary_size)
                 # o should have shape (sequence_length)
                 temperature = 0.5
-                o = None
+
+                p = torch.softmax(output[i]/temperature, dim=1)
+                o = torch.multinomial(p, 1).squeeze(1)
 
             for token in o:
                 if token in special_idx.values():
@@ -1741,3 +1986,4 @@ if __name__ == "__main__":
     TestMultiHeadAttentionShapes().test_split_heads_shape()
     TestMultiHeadAttentionShapes().test_merge_heads_shape()
     TestMultiHeadAttentionShapes().test_forward_shape()
+# %%
